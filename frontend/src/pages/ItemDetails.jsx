@@ -1,27 +1,24 @@
 import { useEffect, useState } from "react";
-import {
-  Link,
-  useNavigate,
-  useParams,
-} from "react-router-dom";
-
+import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { formatApiErrorMessage } from "../utils/validation";
 
 function ItemDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-
   const { user } = useAuth();
 
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [claimMessage, setClaimMessage] =
-    useState("");
-
-  const [showClaim, setShowClaim] =
-    useState(false);
+  // Claim form states
+  const [claimMessage, setClaimMessage] = useState("");
+  const [showClaim, setShowClaim] = useState(false);
+  const [claimTouched, setClaimTouched] = useState(false);
+  const [claimError, setClaimError] = useState("");
+  const [claimServerError, setClaimServerError] = useState("");
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
 
   useEffect(() => {
     fetchItem();
@@ -29,10 +26,7 @@ function ItemDetails() {
 
   const fetchItem = async () => {
     try {
-      const response = await api.get(
-        `/items/${id}`
-      );
-
+      const response = await api.get(`/items/${id}`);
       setItem(response.data);
     } catch (error) {
       console.error(error);
@@ -42,75 +36,117 @@ function ItemDetails() {
   };
 
   const isOwner =
-    user &&
-    item &&
-    item.reportedBy?._id === user.id;
+    user && item && item.reportedBy?._id === user.id;
 
   const handleDelete = async () => {
     const confirmed = window.confirm(
       "Are you sure you want to delete this report?"
     );
-
     if (!confirmed) return;
 
     try {
       await api.delete(`/items/${id}`);
-
       alert("Report deleted");
-
       navigate("/items");
     } catch (error) {
       alert(
-        error.response?.data?.message ||
-          "Failed to delete"
+        formatApiErrorMessage(
+          error,
+          "Failed to delete the report. Please try again."
+        )
       );
     }
   };
 
   const handleRecovered = async () => {
     try {
-      await api.patch(
-        `/items/${id}/status`,
-        {
-          status: "recovered",
-        }
-      );
-
+      await api.patch(`/items/${id}/status`, {
+        status: "recovered",
+      });
       fetchItem();
     } catch (error) {
       alert(
-        error.response?.data?.message ||
-          "Failed to update status"
+        formatApiErrorMessage(
+          error,
+          "Failed to update status. Please try again."
+        )
       );
     }
+  };
+
+  const validateClaim = (value) => {
+    const trimmed = (value || "").trim();
+    if (!trimmed) {
+      return "Please provide details explaining why this item belongs to you.";
+    }
+    if (trimmed.length < 10) {
+      return "Please enter at least 10 characters with specific identifiable details (e.g., color, markings, contents).";
+    }
+    if (trimmed.length > 500) {
+      return "Claim details cannot exceed 500 characters.";
+    }
+    return "";
+  };
+
+  const handleClaimChange = (e) => {
+    const value = e.target.value;
+    setClaimMessage(value);
+    if (claimTouched) {
+      setClaimError(validateClaim(value));
+    }
+  };
+
+  const handleClaimBlur = () => {
+    setClaimTouched(true);
+    setClaimError(validateClaim(claimMessage));
   };
 
   const handleClaim = async (e) => {
     e.preventDefault();
 
+    setClaimTouched(true);
+    const err = validateClaim(claimMessage);
+    setClaimError(err);
+    if (err) {
+      return;
+    }
+
     try {
-      await api.post(
-        `/items/${id}/claims`,
-        {
-          message: claimMessage,
-        }
-      );
+      setClaimSubmitting(true);
+      setClaimServerError("");
 
-      alert("Claim submitted!");
+      await api.post(`/items/${id}/claims`, {
+        message: claimMessage.trim(),
+      });
 
+      alert("Claim submitted successfully!");
       setClaimMessage("");
+      setClaimTouched(false);
+      setClaimError("");
       setShowClaim(false);
     } catch (error) {
-      alert(
-        error.response?.data?.message ||
-          "Failed to submit claim"
+      setClaimServerError(
+        formatApiErrorMessage(
+          error,
+          "Failed to submit claim. Please try again."
+        )
       );
+    } finally {
+      setClaimSubmitting(false);
     }
+  };
+
+  const handleCancelClaim = () => {
+    setShowClaim(false);
+    setClaimMessage("");
+    setClaimTouched(false);
+    setClaimError("");
+    setClaimServerError("");
   };
 
   if (loading) {
     return (
-      <div className="p-10 text-center">
+      <div className="p-10 text-center text-gray-500">
         Loading...
       </div>
     );
@@ -118,7 +154,7 @@ function ItemDetails() {
 
   if (!item) {
     return (
-      <div className="p-10 text-center">
+      <div className="p-10 text-center text-gray-500">
         Item not found.
       </div>
     );
@@ -127,7 +163,6 @@ function ItemDetails() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-        
         {item.image ? (
           <img
             src={item.image}
@@ -142,9 +177,7 @@ function ItemDetails() {
 
         <div className="p-8">
           <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-3xl font-bold">
-              {item.title}
-            </h1>
+            <h1 className="text-3xl font-bold">{item.title}</h1>
 
             <span
               className={`rounded-full px-4 py-2 text-sm font-semibold ${
@@ -157,19 +190,15 @@ function ItemDetails() {
             </span>
           </div>
 
-          <p className="mb-6 text-gray-600">
-            {item.description}
-          </p>
+          <p className="mb-6 text-gray-600">{item.description}</p>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <strong>Category:</strong>{" "}
-              {item.category}
+              <strong>Category:</strong> {item.category}
             </div>
 
             <div>
-              <strong>Location:</strong>{" "}
-              {item.location}
+              <strong>Location:</strong> {item.location}
             </div>
 
             <div>
@@ -178,13 +207,11 @@ function ItemDetails() {
             </div>
 
             <div>
-              <strong>Status:</strong>{" "}
-              {item.status}
+              <strong>Status:</strong> {item.status}
             </div>
 
             <div>
-              <strong>Reported By:</strong>{" "}
-              {item.reportedBy?.name}
+              <strong>Reported By:</strong> {item.reportedBy?.name}
             </div>
           </div>
 
@@ -193,14 +220,14 @@ function ItemDetails() {
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 to={`/items/${item._id}/edit`}
-                className="rounded-lg bg-blue-600 px-5 py-2 text-white"
+                className="rounded-lg bg-blue-600 px-5 py-2 text-white hover:bg-blue-700 transition-colors"
               >
                 Edit
               </Link>
 
               <button
                 onClick={handleDelete}
-                className="rounded-lg bg-red-600 px-5 py-2 text-white"
+                className="rounded-lg bg-red-600 px-5 py-2 text-white hover:bg-red-700 transition-colors"
               >
                 Delete
               </button>
@@ -208,7 +235,7 @@ function ItemDetails() {
               {item.status !== "recovered" && (
                 <button
                   onClick={handleRecovered}
-                  className="rounded-lg bg-green-600 px-5 py-2 text-white"
+                  className="rounded-lg bg-green-600 px-5 py-2 text-white hover:bg-green-700 transition-colors"
                 >
                   Mark Recovered
                 </button>
@@ -216,7 +243,7 @@ function ItemDetails() {
 
               <Link
                 to={`/items/${item._id}/claims`}
-                className="rounded-lg border px-5 py-2"
+                className="rounded-lg border px-5 py-2 hover:bg-gray-100 transition-colors"
               >
                 View Claims
               </Link>
@@ -224,47 +251,88 @@ function ItemDetails() {
           )}
 
           {/* Claim */}
-          {!isOwner &&
-            user &&
-            item.status === "active" && (
-              <div className="mt-8">
-                {!showClaim ? (
-                  <button
-                    onClick={() => setShowClaim(true)}
-                    className="rounded-lg bg-blue-600 px-6 py-3 text-white"
-                  >
-                    Claim This Item
-                  </button>
-                ) : (
-                  <form
-                    onSubmit={handleClaim}
-                    className="rounded-lg bg-gray-50 p-5"
-                  >
-                    <h2 className="mb-4 text-xl font-semibold">
-                      Why is this your item?
-                    </h2>
+          {!isOwner && user && item.status === "active" && (
+            <div className="mt-8">
+              {!showClaim ? (
+                <button
+                  onClick={() => setShowClaim(true)}
+                  className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 transition-colors"
+                >
+                  Claim This Item
+                </button>
+              ) : (
+                <form
+                  onSubmit={handleClaim}
+                  noValidate
+                  className="rounded-xl border bg-gray-50 p-6"
+                >
+                  <h2 className="mb-2 text-xl font-semibold">
+                    Why is this your item?
+                  </h2>
+                  <p className="mb-4 text-sm text-gray-600">
+                    Provide verifiable details that prove ownership, such as distinctive marks, engravings, or contents.
+                  </p>
 
-                    <textarea
-                      value={claimMessage}
-                      onChange={(e) =>
-                        setClaimMessage(e.target.value)
-                      }
-                      required
-                      rows="5"
-                      placeholder="Provide details to verify your claim..."
-                      className="mb-4 w-full rounded-lg border p-3"
-                    />
+                  {claimServerError && (
+                    <div
+                      role="alert"
+                      className="mb-4 rounded-lg bg-red-100 p-3 text-sm font-medium text-red-700 border border-red-200"
+                    >
+                      {claimServerError}
+                    </div>
+                  )}
 
+                  <label htmlFor="claim-details" className="sr-only">
+                    Claim Details
+                  </label>
+                  <textarea
+                    id="claim-details"
+                    name="claimDetails"
+                    value={claimMessage}
+                    onChange={handleClaimChange}
+                    onBlur={handleClaimBlur}
+                    rows="5"
+                    maxLength={500}
+                    placeholder="Provide details to verify your claim (minimum 10 characters)..."
+                    aria-invalid={Boolean(claimTouched && claimError)}
+                    aria-describedby={claimTouched && claimError ? "claim-error" : undefined}
+                    className={`mb-2 w-full rounded-lg border p-3 outline-none transition-colors ${
+                      claimTouched && claimError
+                        ? "border-red-500 bg-white focus:ring-2 focus:ring-red-300"
+                        : "border-gray-300 bg-white focus:ring-2 focus:ring-blue-500"
+                    }`}
+                  />
+                  {claimTouched && claimError && (
+                    <p
+                      id="claim-error"
+                      role="alert"
+                      className="mb-3 text-sm font-medium text-red-600"
+                    >
+                      {claimError}
+                    </p>
+                  )}
+
+                  <div className="flex gap-3">
                     <button
                       type="submit"
-                      className="rounded-lg bg-blue-600 px-5 py-2 text-white"
+                      disabled={claimSubmitting}
+                      className="rounded-lg bg-blue-600 px-5 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
                     >
-                      Submit Claim
+                      {claimSubmitting ? "Submitting Claim..." : "Submit Claim"}
                     </button>
-                  </form>
-                )}
-              </div>
-            )}
+                    <button
+                      type="button"
+                      onClick={handleCancelClaim}
+                      disabled={claimSubmitting}
+                      className="rounded-lg border border-gray-300 bg-white px-5 py-2 font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
