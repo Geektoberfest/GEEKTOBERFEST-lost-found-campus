@@ -34,7 +34,7 @@ const createItem = async (req, res) => {
 
 const getItems = async (req, res) => {
   try {
-    const { search, category, location, type, status, page = 1, limit = 10 } = req.query;
+    const { search, category, location, type, status, sortBy, page = 1, limit = 10 } = req.query;
     const filter = {};
 
     if (category) filter.category = category;
@@ -50,6 +50,15 @@ const getItems = async (req, res) => {
       ];
     }
 
+    let sortOptions = { createdAt: -1 };
+    if (sortBy === "oldest") {
+      sortOptions = { createdAt: 1 };
+    } else if (sortBy === "newest") {
+      sortOptions = { createdAt: -1 };
+    } else if (sortBy === "date" || sortBy === "itemDate") {
+      sortOptions = { date: -1 };
+    }
+
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
     const skip = (pageNumber - 1) * limitNumber;
@@ -57,7 +66,7 @@ const getItems = async (req, res) => {
     const totalItems = await Item.countDocuments(filter);
     const items = await Item.find(filter)
       .populate(owner)
-      .sort({ createdAt: -1 })
+      .sort(sortOptions)
       .skip(skip)
       .limit(limitNumber);
 
