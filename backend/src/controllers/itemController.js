@@ -34,7 +34,7 @@ const createItem = async (req, res) => {
 
 const getItems = async (req, res) => {
   try {
-    const { search, category, location, type, status } = req.query;
+    const { search, category, location, type, status, page = 1, limit = 10 } = req.query;
     const filter = {};
 
     if (category) filter.category = category;
@@ -45,16 +45,29 @@ const getItems = async (req, res) => {
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filter.$or = [
-        { title: { $regex: escaped, $options: "i" } },
-        { description: { $regex: escaped, $options: "i" } },
+        { title: { $regex: escaped,$options: "i" } },
+        { description: { $regex: escaped,$options: "i" } },
       ];
     }
 
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const totalItems = await Item.countDocuments(filter);
     const items = await Item.find(filter)
       .populate(owner)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNumber);
 
-    res.json(items);
+    res.json({
+      items,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalItems / limitNumber),
+      totalItems,
+      limit: limitNumber,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -154,28 +167,22 @@ const updateStatus = async (req, res) => {
       return res.status(403).json({ message: "You can only update your own reports" });
     }
 
-    // Idempotent update
     if (item.status === status) {
       return res.json({ message: "Status updated", item });
     }
 
-    // Direct transition to claimed is forbidden; items only become claimed via claim approval
     if (status === "claimed") {
       return res.status(400).json({ message: "Items can only be marked as claimed through claim approval" });
     }
 
-    // A recovered item cannot become claimed
     if (item.status === "recovered" && status === "claimed") {
       return res.status(400).json({ message: "A recovered item cannot be changed to claimed" });
     }
 
-    // A claimed item cannot become recovered or active
     if (item.status === "claimed") {
       return res.status(400).json({ message: `A claimed item cannot be changed to ${status}` });
     }
 
-    // Allowed transition: 'active' -> 'recovered' (owner marks item recovered)
-    // Allowed transition: 'recovered' -> 'active' (owner reopens item)
     if (item.status === "active" && status === "recovered") {
       item.status = "recovered";
     } else if (item.status === "recovered" && status === "active") {
