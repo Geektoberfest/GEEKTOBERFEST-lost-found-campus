@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
 import ItemCard from "../components/ItemCard";
+import SearchBar from "../components/SearchBar";
+
 
 function Items() {
   const [items, setItems] = useState([]);
@@ -75,6 +77,7 @@ function Items() {
 
       {/* Search */}
       <div className="mb-6">
+        <SearchBar value={filters.search}onChange={handleChange}/>
         <input
           type="text"
           name="search"
