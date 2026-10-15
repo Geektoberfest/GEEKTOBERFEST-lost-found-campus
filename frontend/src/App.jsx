@@ -16,6 +16,7 @@ import ReportItem from "./pages/ReportItem";
 import EditItem from "./pages/EditItem";
 import Dashboard from "./pages/Dashboard";
 import Claims from "./pages/Claims";
+import NotFound from "./pages/NotFound";
 
 function App() {
   return (
@@ -85,8 +86,10 @@ function App() {
             </ProtectedRoute>
           }
         />
-
-        
+        <Route
+          path="*"
+          element={<NotFound />}
+        /> 
 
       </Routes>
 
